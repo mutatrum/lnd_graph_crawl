@@ -13,7 +13,7 @@ if (process.argv.length == 2) {
 const alias = process.argv[2];
 const min_channels = process.argv.length >= 4 ? Number(process.argv[3]) : 5;
 const min_capacity = process.argv.length >= 5 ? process.argv[4] : 0.1;
-const days_active = process.argv.length >= 6 ? process.argv[5] : 7;
+var days_active = process.argv.length >= 6 ? process.argv[5] : 7;
 const graph_file = process.argv.length >= 7 ? process.argv[6] : 'describegraph.json';
 if (!fs.existsSync(graph_file)) {
   help(`Node graph file not found: ${graph_file}`);
@@ -22,7 +22,9 @@ if (!fs.existsSync(graph_file)) {
 
 var pub_key;
 const graph = JSON.parse(fs.readFileSync(graph_file));
-console.log(`Node found: ${graph.nodes.length}`)
+console.log(`Nodes found: ${graph.nodes.length}`)
+console.log(`Edges found: ${graph.edges.length}`)
+
 for (var node of graph.nodes) {
   nodes[node.pub_key] = {
     ...node,
@@ -37,16 +39,13 @@ for (var node of graph.nodes) {
 }
 
 for (var edge of graph.edges) {
-  var days = Math.floor((now - new Date(edge.last_update * 1000).getTime()) / 1000 / 60 / 60 / 24);
-  if (days < days_active) {
-    nodes[edge.node1_pub].channels++;
-    nodes[edge.node1_pub].capacity += Number(edge.capacity);
-    nodes[edge.node1_pub].edges.push(edge.node2_pub);
-    
-    nodes[edge.node2_pub].channels++;
-    nodes[edge.node2_pub].capacity += Number(edge.capacity);
-    nodes[edge.node2_pub].edges.push(edge.node1_pub);
-  }
+  nodes[edge.node1_pub].channels++;
+  nodes[edge.node1_pub].capacity += Number(edge.capacity);
+  nodes[edge.node1_pub].edges.push(edge.node2_pub)
+
+  nodes[edge.node2_pub].channels++;
+  nodes[edge.node2_pub].capacity += Number(edge.capacity);
+  nodes[edge.node2_pub].edges.push(edge.node1_pub);
 }
 
 var bos_file = 'export.json';
@@ -59,13 +58,16 @@ if (process.argv.length >= 8) {
 }
 
 if (fs.existsSync(bos_file)) {
+  var count = 0;
   const bosnodes = JSON.parse(fs.readFileSync(bos_file));
   for (var bos of bosnodes.data) {
     var node = nodes[bos.publicKey];
     if (node) {
       node.bos = bos;
+      count++;
     }
   }
+  console.log(`BOS nodes found: ${count}`);
 } else {
   console.log(`WARNING: BOS export file not found: ${bos_file}`);
 }
@@ -75,11 +77,20 @@ if (!pub_key) {
   return;
 }
 
-var distance = 0;
+console.log();
+
+var node = nodes[pub_key];
+var last_update = new Date(node.last_update * 1000);
+var days = Math.floor((now - last_update.getTime()) / 1000 / 60 / 60 / 24);
+if (days_active < days) {
+  console.log(`Node active ${days} ago, increasting days_active`);
+  days_active = days;
+}
 
 logNode(pub_key);
 console.log();
 
+var distance = 0;
 const cache = [];
 cache[0] = [pub_key];
 const known_nodes = new Set();
@@ -110,14 +121,14 @@ function logNode(pub_key) {
   var bos_score = node.bos ? ` (bos ${node.bos.score} cap ${node.bos.rankCapacity} cha ${node.bos.rankChannelCount} age ${node.bos.rankAge} gro ${node.bos.rankGrowth} ava ${node.bos.rankAvailability})` : '';
   if ((last_update != '' && channels > min_channels && capacity > min_capacity) || bos_score != '') {
     var days = Math.floor((now - last_update.getTime()) / 1000 / 60 / 60 / 24);
-    if (days < days_active) {
+    if (days <= days_active) {
       console.log(`${pub_key}  distance: ${distance}  channels: ${String(channels).padStart(4, ' ')}  capacity: ${(capacity).toFixed(2).padStart(6, ' ')}  ${last_update.toISOString().substring(0,10)}  ${node.alias}${bos_score}`);
     }
   }
 }
 
 function help(error) {
-  console.log('node lnd_graph_crawl.js ALIAS|PUB_KEY (min_channels) (min_capacity_btc) (active_days) (lnd describegraph.json) (bos score file export.json)');
+  console.log('node lnd_graph_crawl.js ALIAS|PUB_KEY (min_channels [5]) (min_capacity_btc [0.1]) (active_days [7]) (lnd graph file [describegraph.json]) (bos score file [export.json])');
   console.log();
   console.log('Find suitable lightning nodes to connect, based on distance, channels, capacity, bos score and liveliness');
   console.log();
