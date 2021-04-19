@@ -3,6 +3,9 @@ const fs = require('fs');
 const nodes = [];
 const now = Date.now();
 
+console.log('lnd_graph_crawl')
+console.log();
+
 if (process.argv.length == 2) {
   help();
   return;
@@ -19,6 +22,7 @@ if (!fs.existsSync(graph_file)) {
 
 var pub_key;
 const graph = JSON.parse(fs.readFileSync(graph_file));
+console.log(`Node found: ${graph.nodes.length}`)
 for (var node of graph.nodes) {
   nodes[node.pub_key] = {
     ...node,
@@ -33,13 +37,16 @@ for (var node of graph.nodes) {
 }
 
 for (var edge of graph.edges) {
-  nodes[edge.node1_pub].channels++;
-  nodes[edge.node1_pub].capacity += Number(edge.capacity);
-  nodes[edge.node1_pub].edges.push(edge.node2_pub);
-
-  nodes[edge.node2_pub].channels++;
-  nodes[edge.node2_pub].capacity += Number(edge.capacity);
-  nodes[edge.node2_pub].edges.push(edge.node1_pub);
+  var days = Math.floor((now - new Date(edge.last_update * 1000).getTime()) / 1000 / 60 / 60 / 24);
+  if (days < days_active) {
+    nodes[edge.node1_pub].channels++;
+    nodes[edge.node1_pub].capacity += Number(edge.capacity);
+    nodes[edge.node1_pub].edges.push(edge.node2_pub);
+    
+    nodes[edge.node2_pub].channels++;
+    nodes[edge.node2_pub].capacity += Number(edge.capacity);
+    nodes[edge.node2_pub].edges.push(edge.node1_pub);
+  }
 }
 
 var bos_file = 'export.json';
@@ -78,8 +85,6 @@ cache[0] = [pub_key];
 const known_nodes = new Set();
 known_nodes.add(pub_key);
 
-
-
 do {
   distance++;
   cache[distance] = [];
@@ -112,8 +117,6 @@ function logNode(pub_key) {
 }
 
 function help(error) {
-  console.log('lnd_graph_crawl.js');
-  console.log();
   console.log('node lnd_graph_crawl.js ALIAS|PUB_KEY (min_channels) (min_capacity_btc) (active_days) (lnd describegraph.json) (bos score file export.json)');
   console.log();
   console.log('Find suitable lightning nodes to connect, based on distance, channels, capacity, bos score and liveliness');
